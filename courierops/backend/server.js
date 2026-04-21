@@ -19,7 +19,7 @@ app.use(express.json());             // Parse JSON request bodies
 // CORS: allow requests only from your frontend URL
 app.use(cors({
   origin: process.env.FRONTEND_URL || '*',
-  credentials: false,
+  credentials: true,
 }));
 
 // Rate limiting: prevent brute-force attacks on API
