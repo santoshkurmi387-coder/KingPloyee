@@ -10,7 +10,7 @@
 // In development this hits localhost:5000.
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:5000/api'
-  : '/api';   // same-origin if backend is served together
+  : 'https://kingployee.onrender.com/api';   // same-origin if backend is served together
 
 // ── Token management ──────────────────────────────────────────────
 const Auth = {
