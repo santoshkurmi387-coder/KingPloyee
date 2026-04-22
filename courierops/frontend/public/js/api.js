@@ -7,7 +7,7 @@
 // In production, update this to your deployed backend URL
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:5000/api'
-  : '/api';
+  : 'https://kingployee.onrender.com/api';
 
 /* ── Token / session management ─────────────────────────────── */
 const Auth = {
