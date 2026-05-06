@@ -60,7 +60,7 @@ app.use('/api/auth',       require('./routes/auth'));
 app.use('/api/employees',  require('./routes/employees'));
 app.use('/api/attendance', require('./routes/attendance'));
 app.use('/api/salary',     require('./routes/salary'));
-
+app.use('/api/drs', require('./routes/drs'));
 // Health check — open this in browser to confirm backend is alive:
 // https://kingployee.onrender.com/api/health
 app.get('/api/health', (req, res) => {
