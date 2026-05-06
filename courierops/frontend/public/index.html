@@ -174,6 +174,11 @@
       <div class="nav-item" onclick="switchTab('salary',this)">
         <i class="fas fa-file-invoice-dollar nav-icon"></i> Salary Reports
       </div>
+
+      <div class="nav-lbl">Delivery</div>
+      <div class="nav-item" onclick="switchTab('drs',this)">
+        <i class="fas fa-truck-fast nav-icon"></i> Run Sheets (DRS)
+      </div>
     </nav>
 
     <div class="sidebar-footer">
@@ -405,11 +410,11 @@
               <thead>
                 <tr>
                   <th>Employee</th><th>ID</th><th>Role</th>
-                  <th>Daily Wage</th><th>Mobile</th><th class="no-print">Actions</th>
+                  <th>Daily Wage</th><th>Mobile</th><th class="no-print">Report</th><th class="no-print">Actions</th>
                 </tr>
               </thead>
               <tbody id="empBody">
-                <tr><td colspan="6"><div class="empty-state">
+                <tr><td colspan="7"><div class="empty-state">
                   <i class="fas fa-user-slash"></i>
                   <h3>No employees</h3><p>Add your first employee above.</p>
                 </div></td></tr>
@@ -526,9 +531,97 @@
         </div>
       </div>
 
+      <!-- ── DRS (Delivery Run Sheets) ─────────────── -->
+      <div class="tab-panel" id="tab-drs">
+
+        <div class="section-card">
+          <div class="section-header">
+            <div class="section-title"><i class="fas fa-file-arrow-up"></i> Upload Delivery Run Sheet</div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="drsEmp">Employee</label>
+              <select id="drsEmp"><option value="">— Select Employee —</option></select>
+            </div>
+            <div class="form-group">
+              <label for="drsDate">Date of Run Sheet</label>
+              <input type="date" id="drsDate"/>
+            </div>
+            <div class="form-group" style="grid-column:1/-1">
+              <label>Upload PDF / Image</label>
+              <div class="drs-upload-area" id="drsDropZone" onclick="document.getElementById('drsFile').click()">
+                <i class="fas fa-cloud-arrow-up"></i>
+                <span id="drsFileName">Click to choose file or drag &amp; drop here</span>
+                <span style="font-size:11px;color:var(--text-muted)">PDF, JPG, PNG supported</span>
+              </div>
+              <input type="file" id="drsFile" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="drsFileSelected(this)"/>
+            </div>
+            <div class="form-group" style="grid-column:1/-1">
+              <label for="drsNote">Note (optional)</label>
+              <input type="text" id="drsNote" placeholder="e.g. Zone A delivery, 45 parcels"/>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <button class="btn btn-primary" id="saveDrsBtn" onclick="saveDRS()">
+            <i class="fas fa-floppy-disk"></i> Save Run Sheet
+          </button>
+        </div>
+
+        <div class="section-card">
+          <div class="section-header">
+            <div class="section-title"><i class="fas fa-truck-fast"></i> Delivery Run Sheets</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+              <select id="drsFilterEmp" onchange="renderDRSList()" style="font-size:13px;padding:7px 10px;width:auto">
+                <option value="">All Employees</option>
+              </select>
+              <input type="month" id="drsFilterMo" onchange="renderDRSList()" style="font-size:13px;padding:7px 10px;width:auto"/>
+              <input type="date" id="drsFilterDate" onchange="renderDRSList()" style="font-size:13px;padding:7px 10px;width:auto"/>
+            </div>
+          </div>
+          <div id="drsListWrap">
+            <div class="empty-state">
+              <i class="fas fa-truck-fast"></i>
+              <h3>No run sheets yet</h3>
+              <p>Upload a delivery run sheet using the form above.</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+
     </div><!-- /content -->
   </main>
 </div><!-- /appShell -->
+
+<!-- ═══════════════════════════════════════════════
+     EMPLOYEE ATTENDANCE REPORT MODAL
+═══════════════════════════════════════════════ -->
+<div id="empReportModal">
+  <div class="emp-report-box">
+    <div class="emp-report-header">
+      <div style="display:flex;align-items:center;gap:14px">
+        <div class="emp-avatar" id="erAvatar" style="width:46px;height:46px;font-size:17px;margin-right:0"></div>
+        <div>
+          <div style="font-size:18px;font-weight:700" id="erName">—</div>
+          <div style="font-size:12px;color:var(--text-muted)" id="erMeta">—</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="closeEmpReport()"><i class="fas fa-xmark"></i></button>
+    </div>
+    <div class="emp-report-body" id="erBody">
+      <div style="text-align:center;padding:40px">
+        <div class="spinner" style="margin:0 auto 16px;width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite"></div>
+        <div style="color:var(--text-muted);font-size:13px">Loading report…</div>
+      </div>
+    </div>
+    <div class="emp-report-footer no-print">
+      <button class="btn btn-secondary" onclick="closeEmpReport()"><i class="fas fa-xmark"></i> Close</button>
+      <button class="btn btn-primary" onclick="printEmpReport()"><i class="fas fa-print"></i> Print / Save PDF</button>
+    </div>
+  </div>
+</div>
+
 
 <!-- ═══════════════════════════════════════════════
      MODAL (shared for all edit dialogs)
