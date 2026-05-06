@@ -133,3 +133,23 @@ const SalaryAPI = {
   updateAdvance: (id, data)     => put(`/salary/advances/${id}`, data),
   removeAdvance: (id)           => del(`/salary/advances/${id}`),
 };
+
+/* ── DRS API ─────────────────────────────────────────────────── */
+const DRSAPI = {
+  // List run sheets (no file data) — for display
+  list: (params = {}) => get(`/drs?${new URLSearchParams(params)}`),
+
+  // Get single run sheet with full file data — for view/download
+  getFile: (id) => get(`/drs/${id}/file`),
+
+  // Get all run sheets with file data for a specific employee+month — for month PDF
+  monthFiles: (employeeId, month) =>
+    get(`/drs/month-files?employeeId=${employeeId}&month=${month}`),
+
+  // Upload a new run sheet
+  create: (data) => post('/drs', data),
+
+  // Delete a run sheet
+  remove: (id) => del(`/drs/${id}`),
+};
+  
