@@ -43,7 +43,9 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // handle preflight for all routes
 
 // ── Middleware ────────────────────────────────────────────────────
-app.use(express.json());
+// Increased limit to 15mb to support base64-encoded PDF/image uploads (DRS feature)
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 // Rate limiting
 const limiter = rateLimit({
