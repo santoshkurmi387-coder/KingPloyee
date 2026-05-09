@@ -814,17 +814,33 @@ switchTab = function(id, el) {
 function openEmpReport(empId) {
   const emp = employees.find(e => e._id === empId);
   if (!emp) return;
+  document.getElementById('empReportModal').dataset.empId = empId;
   document.getElementById('erAvatar').textContent = ini(emp.name);
   document.getElementById('erName').textContent   = emp.name;
   document.getElementById('erMeta').textContent   = `${emp.empId} · ${emp.role} · ₹${emp.wage}/day`;
-  document.getElementById('erBody').innerHTML = `
-    <div style="text-align:center;padding:40px">
-      <div class="spinner" style="margin:0 auto 16px;width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:spin .8s linear infinite"></div>
-      <div style="color:var(--text-muted);font-size:13px">Loading report…</div>
-    </div>`;
+  const mSel = document.getElementById('erMonthFilter');
+  if (mSel) mSel.value = curMo();
+  _showEmpReportLoading();
   document.getElementById('empReportModal').classList.add('open');
   document.body.style.overflow = 'hidden';
-  _loadEmpReport(emp);
+  _loadEmpReport(emp, curMo());
+}
+
+function _showEmpReportLoading() {
+  document.getElementById('erBody').innerHTML = `
+    <div style="text-align:center;padding:40px">
+      <div style="margin:0 auto 16px;width:36px;height:36px;border:3px solid #e5e7eb;border-top-color:#e63946;border-radius:50%;animation:spin .8s linear infinite"></div>
+      <div style="color:#6b7280;font-size:13px">Loading report…</div>
+    </div>`;
+}
+
+function erMonthChanged() {
+  const empId = document.getElementById('empReportModal').dataset.empId;
+  const month = document.getElementById('erMonthFilter').value;
+  const emp   = employees.find(e => e._id === empId);
+  if (!emp) return;
+  _showEmpReportLoading();
+  _loadEmpReport(emp, month || '');
 }
 
 function closeEmpReport() {
@@ -833,208 +849,181 @@ function closeEmpReport() {
 }
 
 function printEmpReport() {
-  const box   = document.querySelector('.emp-report-box');
-  const orig  = document.body.innerHTML;
-  const name  = document.getElementById('erName').textContent;
-  document.body.innerHTML = `
-    <html><head><title>Report - ${name}</title>
+  const modal      = document.getElementById('empReportModal');
+  const reportHtml = modal.dataset.reportHtml || document.getElementById('erBody').innerHTML;
+  const name       = modal.dataset.empName || document.getElementById('erName').textContent;
+
+  const fullHtml = `<!DOCTYPE html><html><head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <title>Attendance Report — ${name}</title>
     <style>
-      body{font-family:'DM Sans',Arial,sans-serif;color:#111;background:#fff;padding:32px}
-      table{width:100%;border-collapse:collapse;font-size:12px;margin-top:16px}
-      th{background:#f3f4f6;padding:9px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;border:1px solid #e5e7eb}
-      td{padding:9px 12px;border:1px solid #e5e7eb}
-      .present{color:#16a34a;font-weight:700}
-      .absent{color:#dc2626;font-weight:700}
-      .half{color:#d97706;font-weight:700}
-      .leave{color:#2563eb;font-weight:700}
-      .stat-row{display:flex;gap:24px;flex-wrap:wrap;margin:16px 0;background:#f9fafb;padding:16px;border-radius:8px;border:1px solid #e5e7eb}
-      .stat-item{text-align:center}
-      .stat-num{font-size:22px;font-weight:700}
-      .stat-lbl{font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px}
-      h1{font-size:20px;margin:0 0 4px}
-      .sub{font-size:13px;color:#6b7280;margin-bottom:20px}
-      .brand{font-size:11px;color:#9ca3af;margin-top:24px;text-align:right}
-    </style></head><body>` + box.innerHTML + `<div class="brand">KingPloyee — Branch Management System</div></body></html>`;
-  window.print();
-  document.body.innerHTML = orig;
-  location.reload();
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:'Segoe UI',Arial,sans-serif;color:#111;background:#fff;padding:24px;font-size:13px}
+      table{width:100%;border-collapse:collapse;margin-top:8px}
+      th,td{padding:8px 10px;border:1px solid #e5e7eb;font-size:11px}
+      th{background:#f3f4f6;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+      .footer{font-size:10px;color:#9ca3af;margin-top:20px;text-align:right;border-top:1px solid #e5e7eb;padding-top:8px}
+    </style>
+  </head><body>
+    ${reportHtml}
+    <div class="footer">KingPloyee — Branch Management System</div>
+  </body></html>`;
+
+  // Use Blob URL — works on mobile browsers without popup blockers
+  const blob = new Blob([fullHtml], { type: 'text/html' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `Attendance_Report_${name.replace(/\s+/g,'_')}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
+  toast('Report downloaded! Open the .html file and print/save as PDF from browser.', 'success');
 }
 
-async function _loadEmpReport(emp) {
+async function downloadMonthDRS(empId, month, empName) {
   try {
-    // Fetch all attendance for this employee
-    const [attRes, advRes] = await Promise.all([
-      AttendanceAPI.list({ employeeId: emp._id }),
-      SalaryAPI.listAdvances({ employeeId: emp._id })
-    ]);
+    toast('Fetching run sheets from server…', 'info');
+    const res  = await DRSAPI.monthFiles(empId, month);
+    const all  = res.data || [];
 
-    const recs = attRes.data || [];
-    const advs = advRes.data || [];
+    if (!all.length) { toast('No run sheets found for this month.', 'warn'); return; }
 
-    // Stats
-    const present  = recs.filter(r => r.status === 'Present').length;
-    const halfDay  = recs.filter(r => r.status === 'Half-Day').length;
-    const absent   = recs.filter(r => r.status === 'Absent').length;
-    const leave    = recs.filter(r => r.status === 'Leave').length;
-    const totalHrs = recs.reduce((s, r) => s + (r.hoursWorked || 0), 0);
-    const daysWithHrs = recs.filter(r => r.hoursWorked > 0).length;
-    const avgHrs   = daysWithHrs ? (totalHrs / daysWithHrs) : 0;
-    const baseSal  = (present * emp.wage) + (halfDay * emp.wage * 0.5);
-    const totalAdv = advs.reduce((s, a) => s + (a.amount || 0), 0);
-    const netPay   = baseSal - totalAdv;
+    const emp = employees.find(e => e._id === empId);
+    const [yr, mo] = month.split('-');
+    const monthLabel = new Date(yr, mo - 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+    const name = emp?.name || empName || all[0]?.employee?.name || 'Employee';
 
-    const bc = s => ({Present:'present',Absent:'absent','Half-Day':'half',Leave:'leave'})[s]||'';
+    // Build image-only pages (embed PDF doesn't work in Blob/offline context on mobile)
+    const pages = all.sort((a, b) => a.date.localeCompare(b.date)).map(r => {
+      if (r.fileType === 'application/pdf') {
+        // For PDFs embed as object with fallback link
+        return `
+          <div class="page">
+            <div class="pg-header"><strong>${r.date}</strong>${r.note ? ' · ' + r.note : ''} — ${r.fileName}</div>
+            <object data="${r.fileData}" type="application/pdf" style="width:100%;height:90vh;border:none">
+              <p style="padding:20px;color:#6b7280;text-align:center">
+                PDF preview not available inline.<br/>
+                <a href="${r.fileData}" download="${r.fileName}" style="color:#e63946;font-weight:700">⬇ Download this sheet (${r.date})</a>
+              </p>
+            </object>
+          </div>`;
+      } else {
+        return `
+          <div class="page">
+            <div class="pg-header"><strong>${r.date}</strong>${r.note ? ' · ' + r.note : ''} — ${r.fileName}</div>
+            <img src="${r.fileData}" style="max-width:100%;display:block;margin:0 auto;border-radius:4px"/>
+          </div>`;
+      }
+    }).join('');
 
-    const rows = recs.length
-      ? recs.sort((a,b) => b.date.localeCompare(a.date)).map(r => `
-        <tr>
-          <td class="mono" style="font-size:12px">${r.date}</td>
-          <td><span class="${bc(r.status)}">${r.status}</span></td>
-          <td>${r.checkIn || '—'}</td>
-          <td>${r.checkOut || '—'}</td>
-          <td>${r.hoursWorked ? toHoursMin(r.hoursWorked) : '—'}</td>
-          <td style="color:#6b7280;font-size:12px">${r.notes || '—'}</td>
-        </tr>`).join('')
-      : `<tr><td colspan="6" style="text-align:center;color:#9ca3af;padding:24px">No attendance records found.</td></tr>`;
-
-    document.getElementById('erBody').innerHTML = `
-      <div class="er-print-header" style="margin-bottom:20px">
-        <h1 style="font-size:18px;font-weight:800;margin:0 0 3px">${emp.name}</h1>
-        <div style="font-size:12px;color:var(--text-muted)">${emp.empId} · ${emp.role} · ₹${emp.wage}/day · ${emp.mobile || 'No mobile'}</div>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:3px">Report generated: ${new Date().toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'})}</div>
+    const fullHtml = `<!DOCTYPE html><html><head>
+      <meta charset="utf-8"/>
+      <meta name="viewport" content="width=device-width,initial-scale=1"/>
+      <title>DRS ${name} — ${monthLabel}</title>
+      <style>
+        *{box-sizing:border-box}
+        body{margin:0;font-family:Arial,sans-serif;background:#f3f4f6}
+        .cover{background:linear-gradient(135deg,#e63946,#1d4ed8);color:#fff;padding:48px 32px;text-align:center;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;page-break-after:always}
+        .cover h1{font-size:28px;margin:0 0 8px}
+        .cover p{font-size:15px;opacity:.85;margin:4px 0}
+        .cover .meta{margin-top:20px;font-size:13px;opacity:.7}
+        .page{background:#fff;padding:16px;min-height:100vh;page-break-after:always;border-bottom:2px solid #e5e7eb}
+        .pg-header{background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#374151}
+        @media print{
+          body{background:#fff}
+          .cover,.page{page-break-after:always}
+        }
+      </style>
+    </head><body>
+      <div class="cover">
+        <div style="font-size:52px;margin-bottom:16px">📦</div>
+        <h1>Delivery Run Sheets</h1>
+        <p style="font-size:18px;font-weight:700">${name}</p>
+        <p>${emp?.empId || ''} · ${emp?.role || ''}</p>
+        <div class="meta">${monthLabel} · ${all.length} Run Sheet${all.length !== 1 ? 's' : ''}</div>
+        <div class="meta" style="margin-top:8px">KingPloyee — Branch Management System</div>
       </div>
+      ${pages}
+    </body></html>`;
 
-      <!-- Summary Stats -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:12px;margin-bottom:22px">
-        ${[
-          ['Present',      present,              'var(--green)'],
-          ['Half-Day',     halfDay,              'var(--amber)'],
-          ['Absent',       absent,               'var(--red)'],
-          ['Leave',        leave,                'var(--blue-light)'],
-          ['Total Hours',  toHoursMin(totalHrs), 'var(--purple)'],
-          ['Avg Hrs/Day',  toHoursMin(avgHrs),   'var(--accent2)'],
-        ].map(([lbl,val,clr]) => `
-          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
-            <div style="font-size:${typeof val==='number'?'22':'16'}px;font-weight:700;color:${clr};font-family:'Space Mono',monospace">${val}</div>
-            <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px;margin-top:4px">${lbl}</div>
-          </div>`).join('')}
-      </div>
-
-      <!-- Salary Summary -->
-      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:22px;display:flex;gap:24px;flex-wrap:wrap;align-items:center">
-        <div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px">Base Salary</div><div style="font-size:18px;font-weight:700;font-family:'Space Mono',monospace">${fmt(baseSal)}</div></div>
-        <div style="color:var(--text-muted)">−</div>
-        <div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px">Total Advance</div><div style="font-size:18px;font-weight:700;font-family:'Space Mono',monospace;color:var(--red)">${fmt(totalAdv)}</div></div>
-        <div style="color:var(--text-muted)">=</div>
-        <div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px">Net Payable</div><div style="font-size:22px;font-weight:800;font-family:'Space Mono',monospace;color:var(--green)">${fmt(netPay)}</div></div>
-      </div>
-
-      <!-- Attendance Table -->
-      <div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.8px">
-        <i class="fas fa-calendar-days" style="color:var(--red);margin-right:6px"></i>All Attendance Records (${recs.length})
-      </div>
-      <div class="table-wrap" style="max-height:340px;overflow-y:auto">
-        <table>
-          <thead><tr>
-            <th>Date</th><th>Status</th><th>Check-In</th><th>Check-Out</th><th>Hours</th><th>Notes</th>
-          </tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>`;
+    // Download as HTML file — user opens it and prints/saves as PDF from browser
+    const blob = new Blob([fullHtml], { type: 'text/html' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `DRS_${name.replace(/\s+/g,'_')}_${month}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    toast(`${all.length} run sheets downloaded! Open the file in browser → Print → Save as PDF.`, 'success');
   } catch (err) {
-    document.getElementById('erBody').innerHTML = `<div style="color:var(--red);padding:24px;text-align:center"><i class="fas fa-circle-xmark" style="font-size:32px;display:block;margin-bottom:12px"></i>${err.message}</div>`;
+    toast('Failed: ' + err.message, 'error');
   }
 }
 
-/* ── Patch renderEmpTable to make names clickable + add Report btn ── */
-const _origRenderEmpTable = renderEmpTable;
-renderEmpTable = function() {
-  const tbody = document.getElementById('empBody');
-  document.getElementById('empCount').textContent = `${employees.length} staff`;
-  if (!employees.length) {
-    tbody.innerHTML = `<tr><td colspan="7">${emptyState('fa-user-slash','No employees registered','Add your first employee above.')}</td></tr>`;
-    return;
-  }
-  tbody.innerHTML = employees.map(e => `
-    <tr>
-      <td>
-        <div class="emp-name-cell" style="cursor:pointer" onclick="openEmpReport('${e._id}')" title="View attendance report">
-          <div class="emp-avatar">${ini(e.name)}</div>
-          <span style="text-decoration:underline;text-underline-offset:3px;text-decoration-style:dotted">${e.name}</span>
-        </div>
-      </td>
-      <td><span class="mono sm">${e.empId}</span></td>
-      <td><span class="role-tag">${e.role}</span></td>
-      <td><span class="mono">${fmt(e.wage)}/day</span></td>
-      <td>${e.mobile || '—'}</td>
-      <td class="no-print">
-        <button class="btn-icon" style="background:var(--blue-bg);border-color:rgba(59,130,246,.3);color:var(--blue-light)" onclick="openEmpReport('${e._id}')" title="View Report">
-          <i class="fas fa-file-chart-column"></i>
-        </button>
-      </td>
-      <td class="no-print">
-        <div style="display:flex;gap:6px">
-          <button class="btn-icon" onclick="editEmpModal('${e._id}')" title="Edit"><i class="fas fa-pen"></i></button>
-          <button class="btn-icon danger" onclick="deleteEmp('${e._id}','${e.name}')" title="Delete"><i class="fas fa-trash-can"></i></button>
-        </div>
-      </td>
-    </tr>`).join('');
-};
+
 
 /* ================================================================
-/* ================================================================
-   FEATURE 2 — DRS (Delivery Run Sheets) — Server/MongoDB based
+   DRS FUNCTIONS — Server based
 ================================================================ */
 
 function fillDrsDrops() {
   const opts = employees.map(e => `<option value="${e._id}">${e.name} (${e.empId})</option>`).join('');
-  const all  = `<option value="">All Employees</option>`;
   const drsEmp = document.getElementById('drsEmp');
   if (drsEmp) drsEmp.innerHTML = `<option value="">— Select Employee —</option>${opts}`;
   const drsFilter = document.getElementById('drsFilterEmp');
-  if (drsFilter) drsFilter.innerHTML = all + opts;
+  if (drsFilter) drsFilter.innerHTML = `<option value="">All Employees</option>${opts}`;
   const dm = document.getElementById('drsFilterMo');
   if (dm && !dm.value) dm.value = curMo();
 }
 
 function drsFileSelected(input) {
-  const file = input.files[0];
-  if (!file) return;
+  const files = input.files;
+  if (!files || !files.length) return;
   const span = document.getElementById('drsFileName');
-  if (span) span.textContent = file.name;
+  if (span) span.textContent = files.length === 1 ? files[0].name : `${files.length} files selected`;
   const zone = document.getElementById('drsDropZone');
   if (zone) zone.classList.add('has-file');
 }
 
 async function saveDRS() {
-  const empId = v('drsEmp');
-  const date  = v('drsDate');
-  const note  = v('drsNote');
-  const file  = document.getElementById('drsFile')?.files[0];
+  const empId     = v('drsEmp');
+  const date      = v('drsDate');
+  const note      = v('drsNote');
+  const fileInput = document.getElementById('drsFile');
+  const files     = fileInput?.files;
 
-  if (!empId) { toast('Please select an employee.', 'error'); return; }
-  if (!date)  { toast('Please select the date of this run sheet.', 'error'); return; }
-  if (!file)  { toast('Please choose a file to upload.', 'error'); return; }
+  if (!empId)              { toast('Please select an employee.', 'error'); return; }
+  if (!date)               { toast('Please select the date of this run sheet.', 'error'); return; }
+  if (!files || !files.length) { toast('Please choose at least one file.', 'error'); return; }
 
   setBtnLoading('saveDrsBtn', true);
   try {
-    const fileData = await fileToBase64(file);
-    await DRSAPI.create({
-      employeeId: empId,
-      date,
-      fileName:   file.name,
-      fileType:   file.type,
-      fileData,
-      note,
-    });
-    // Reset form
+    const emp = employees.find(e => e._id === empId);
+    let uploaded = 0;
+    for (let i = 0; i < files.length; i++) {
+      const file     = files[i];
+      const fileData = await fileToBase64(file);
+      await DRSAPI.create({
+        employeeId: empId,
+        date,
+        fileName:  file.name,
+        fileType:  file.type,
+        fileData,
+        note: files.length > 1 ? `${note ? note + ' · ' : ''}File ${i+1}/${files.length}` : note,
+      });
+      uploaded++;
+    }
     set('drsEmp',''); set('drsDate', today()); set('drsNote','');
-    document.getElementById('drsFile').value = '';
-    document.getElementById('drsFileName').textContent = 'Click to choose file or drag & drop here';
+    fileInput.value = '';
+    document.getElementById('drsFileName').textContent = 'Click to choose files or drag & drop here';
     document.getElementById('drsDropZone')?.classList.remove('has-file');
     await renderDRSList();
-    const emp = employees.find(e => e._id === empId);
-    toast(`Run sheet for ${emp?.name || 'employee'} (${date}) saved!`, 'success');
+    toast(`${uploaded} run sheet${uploaded>1?'s':''} for ${emp?.name||'employee'} (${date}) saved!`, 'success');
   } catch (e) {
     toast('Upload failed: ' + e.message, 'error');
   } finally {
@@ -1054,12 +1043,13 @@ function fileToBase64(file) {
 async function renderDRSList() {
   const wrap = document.getElementById('drsListWrap');
   if (!wrap) return;
-
   const filterEmp  = v('drsFilterEmp');
   const filterMo   = v('drsFilterMo');
   const filterDate = v('drsFilterDate');
 
-  wrap.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text-muted)"><i class="fas fa-spinner fa-spin" style="font-size:22px"></i><div style="margin-top:10px;font-size:13px">Loading…</div></div>`;
+  wrap.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text-muted)">
+    <i class="fas fa-spinner fa-spin" style="font-size:22px"></i>
+    <div style="margin-top:10px;font-size:13px">Loading…</div></div>`;
 
   try {
     const params = {};
@@ -1075,7 +1065,6 @@ async function renderDRSList() {
       return;
     }
 
-    // Group by employee
     const byEmp = {};
     data.forEach(r => {
       const eid = r.employee?._id || r.employee;
@@ -1084,17 +1073,16 @@ async function renderDRSList() {
     });
 
     const month = filterMo || curMo();
-
     wrap.innerHTML = Object.entries(byEmp).map(([eid, grp]) => {
       const rows = grp.records.map(r => `
         <div class="drs-row">
           <div style="display:flex;align-items:center;gap:10px">
-            <div class="drs-file-icon ${r.fileType === 'application/pdf' ? 'pdf' : 'img'}">
-              <i class="fas ${r.fileType === 'application/pdf' ? 'fa-file-pdf' : 'fa-file-image'}"></i>
+            <div class="drs-file-icon ${r.fileType==='application/pdf'?'pdf':'img'}">
+              <i class="fas ${r.fileType==='application/pdf'?'fa-file-pdf':'fa-file-image'}"></i>
             </div>
             <div>
               <div style="font-size:13px;font-weight:600">${r.date}</div>
-              <div style="font-size:11px;color:var(--text-muted)">${r.fileName}${r.note ? ' · ' + r.note : ''}</div>
+              <div style="font-size:11px;color:var(--text-muted)">${r.fileName}${r.note?' · '+r.note:''}</div>
             </div>
           </div>
           <div style="display:flex;gap:8px">
@@ -1111,7 +1099,7 @@ async function renderDRSList() {
               <div class="emp-avatar">${ini(grp.name)}</div>
               <div>
                 <div style="font-weight:700;font-size:14px">${grp.name}</div>
-                <div style="font-size:11px;color:var(--text-muted)">${grp.role} · ${grp.records.length} sheet${grp.records.length !== 1 ? 's' : ''}</div>
+                <div style="font-size:11px;color:var(--text-muted)">${grp.role} · ${grp.records.length} sheet${grp.records.length!==1?'s':''}</div>
               </div>
             </div>
             <button class="btn btn-secondary" style="font-size:12px;padding:7px 14px"
@@ -1122,9 +1110,9 @@ async function renderDRSList() {
           <div class="drs-rows">${rows}</div>
         </div>`;
     }).join('');
-
   } catch (err) {
-    wrap.innerHTML = `<div style="color:var(--red);padding:24px;text-align:center"><i class="fas fa-circle-xmark" style="font-size:28px;display:block;margin-bottom:10px"></i>${err.message}</div>`;
+    wrap.innerHTML = `<div style="color:var(--red);padding:24px;text-align:center">
+      <i class="fas fa-circle-xmark" style="font-size:28px;display:block;margin-bottom:10px"></i>${err.message}</div>`;
   }
 }
 
@@ -1139,9 +1127,7 @@ async function viewDRS(id) {
     } else {
       win.document.write(`<html><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="${rec.fileData}" style="max-width:100%;max-height:100vh"/></body></html>`);
     }
-  } catch (err) {
-    toast('Could not load file: ' + err.message, 'error');
-  }
+  } catch (err) { toast('Could not load: ' + err.message, 'error'); }
 }
 
 async function downloadDRS(id, fileName) {
@@ -1151,11 +1137,11 @@ async function downloadDRS(id, fileName) {
     const rec = res.data;
     const a   = document.createElement('a');
     a.href     = rec.fileData;
-    a.download = `DRS_${rec.employee?.name || ''}_${rec.date}_${fileName}`;
+    a.download = `DRS_${rec.employee?.name||''}_${rec.date}_${fileName}`;
+    document.body.appendChild(a);
     a.click();
-  } catch (err) {
-    toast('Download failed: ' + err.message, 'error');
-  }
+    document.body.removeChild(a);
+  } catch (err) { toast('Download failed: ' + err.message, 'error'); }
 }
 
 async function deleteDRS(id) {
@@ -1164,63 +1150,10 @@ async function deleteDRS(id) {
     await DRSAPI.remove(id);
     await renderDRSList();
     toast('Run sheet deleted.', 'info');
-  } catch (err) {
-    toast('Delete failed: ' + err.message, 'error');
-  }
+  } catch (err) { toast('Delete failed: ' + err.message, 'error'); }
 }
 
-async function downloadMonthDRS(empId, month, empName) {
-  try {
-    setBtnState(true);
-    toast('Fetching run sheets from server…', 'info');
-    const res  = await DRSAPI.monthFiles(empId, month);
-    const all  = res.data || [];
-
-    if (!all.length) { toast('No run sheets found for this month.', 'warn'); return; }
-
-    const emp = employees.find(e => e._id === empId);
-    const [yr, mo] = month.split('-');
-    const monthLabel = new Date(yr, mo - 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' });
-    const name = emp?.name || empName || all[0]?.employee?.name || 'Employee';
-
-    const pages = all.sort((a, b) => a.date.localeCompare(b.date)).map(r => {
-      if (r.fileType === 'application/pdf') {
-        return `<div class="page"><div class="pg-header"><strong>${r.date}</strong> — ${r.fileName}${r.note ? ' · ' + r.note : ''}</div><embed src="${r.fileData}" type="application/pdf" style="width:100%;height:calc(100vh - 60px);border:none"/></div>`;
-      } else {
-        return `<div class="page"><div class="pg-header"><strong>${r.date}</strong> — ${r.fileName}${r.note ? ' · ' + r.note : ''}</div><img src="${r.fileData}" style="max-width:100%;max-height:calc(100vh - 80px);display:block;margin:0 auto"/></div>`;
-      }
-    }).join('');
-
-    const win = window.open('', '_blank');
-    win.document.write(`<!DOCTYPE html><html><head><title>DRS ${name} — ${monthLabel}</title>
-      <style>
-        body{margin:0;font-family:Arial,sans-serif;background:#f3f4f6}
-        .cover{background:linear-gradient(135deg,#e63946,#1d4ed8);color:#fff;padding:48px;text-align:center;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center}
-        .cover h1{font-size:32px;margin:0 0 8px}.cover p{font-size:16px;opacity:.85;margin:4px 0}
-        .cover .meta{margin-top:24px;font-size:14px;opacity:.7}
-        .page{background:#fff;margin:0;padding:16px;min-height:100vh;page-break-after:always}
-        .pg-header{background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px 16px;margin-bottom:12px;font-size:13px;color:#374151}
-        @media print{.cover{page-break-after:always}.page{page-break-after:always;margin:0;padding:8px}}
-      </style></head><body>
-      <div class="cover">
-        <div style="font-size:48px;margin-bottom:20px">📦</div>
-        <h1>Delivery Run Sheets</h1>
-        <p>${name}</p>
-        <p>${emp?.empId || ''} · ${emp?.role || ''}</p>
-        <div class="meta">${monthLabel} · ${all.length} Run Sheet${all.length !== 1 ? 's' : ''}</div>
-        <div class="meta" style="margin-top:8px">KingPloyee — Branch Management System</div>
-      </div>
-      ${pages}
-      <script>window.onload=()=>window.print();<\/script>
-    </body></html>`);
-
-    toast(`Opening ${all.length} run sheets for ${monthLabel}…`, 'success');
-  } catch (err) {
-    toast('Failed: ' + err.message, 'error');
-  }
-}
-
-function setBtnState(loading) { /* placeholder — buttons use inline onclick */ }
+function setBtnState(loading) {}
 
 /* ── Drag & Drop for DRS upload zone ─────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
@@ -1231,18 +1164,18 @@ document.addEventListener('DOMContentLoaded', () => {
     zone.addEventListener('drop', e => {
       e.preventDefault();
       zone.classList.remove('drag-over');
-      const file = e.dataTransfer.files[0];
-      if (file) {
-        document.getElementById('drsFile').files = e.dataTransfer.files;
-        drsFileSelected(document.getElementById('drsFile'));
+      const input = document.getElementById('drsFile');
+      if (e.dataTransfer.files.length) {
+        // DataTransfer files to input
+        const dt = new DataTransfer();
+        Array.from(e.dataTransfer.files).forEach(f => dt.items.add(f));
+        input.files = dt.files;
+        drsFileSelected(input);
       }
     });
   }
-  // Close emp report modal on backdrop click
   const erModal = document.getElementById('empReportModal');
   if (erModal) {
-    erModal.addEventListener('click', e => {
-      if (e.target === erModal) closeEmpReport();
-    });
+    erModal.addEventListener('click', e => { if (e.target === erModal) closeEmpReport(); });
   }
 });
