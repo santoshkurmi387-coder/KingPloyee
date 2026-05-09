@@ -256,6 +256,7 @@ function doLogout() {
    NAVIGATION
 ================================================================ */
 const META = {
+  drs: { title: 'Run Sheets (DRS)', sub: 'Upload & manage daily delivery run sheets' },
   dashboard:  { title: 'Dashboard',       sub: 'Branch overview & quick stats' },
   attendance: { title: 'Log Attendance',  sub: 'Record daily in/out shifts' },
   employees:  { title: 'Employee List',   sub: 'Manage registered staff' },
@@ -274,6 +275,7 @@ function switchTab(id, el) {
   if (id === 'attendance') { fillEmpDrops(); renderAttTable(); }
   if (id === 'employees')  renderEmpTable();
   if (id === 'advances')   { fillEmpDrops(); renderAdvancesTable(); }
+  if (id === 'drs')        { drsFillDrops(); loadDRS(); }
   closeSidebar();
 }
 
@@ -300,16 +302,26 @@ function renderEmpTable() {
   const tbody = document.getElementById('empBody');
   document.getElementById('empCount').textContent = `${employees.length} staff`;
   if (!employees.length) {
-    tbody.innerHTML = `<tr><td colspan="7">${emptyState('fa-user-slash','No employees registered','Add your first employee above.')}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6">${emptyState('fa-user-slash','No employees registered','Add your first employee above.')}</td></tr>`;
     return;
   }
   tbody.innerHTML = employees.map(e => `
     <tr>
-      <td><div class="emp-name-cell"><div class="emp-avatar">${ini(e.name)}</div>${e.name}</div></td>
+      <td>
+        <div class="emp-name-cell" style="cursor:pointer" onclick="openER('${e._id}')" title="View Report">
+          <div class="emp-avatar">${ini(e.name)}</div>
+          <span style="text-decoration:underline;text-underline-offset:3px;text-decoration-style:dotted">${e.name}</span>
+        </div>
+      </td>
       <td><span class="mono sm">${e.empId}</span></td>
       <td><span class="role-tag">${e.role}</span></td>
       <td><span class="mono">${fmt(e.wage)}/day</span></td>
       <td>${e.mobile || '—'}</td>
+      <td class="no-print">
+        <button class="btn-icon" style="color:#60a5fa;border-color:rgba(96,165,250,.3)" onclick="openER('${e._id}')" title="Attendance Report">
+          <i class="fas fa-file-chart-column"></i>
+        </button>
+      </td>
       <td class="no-print">
         <div style="display:flex;gap:6px">
           <button class="btn-icon" onclick="editEmpModal('${e._id}')" title="Edit"><i class="fas fa-pen"></i></button>
@@ -794,200 +806,218 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 /* ================================================================
-   PATCH v2 — Employee Attendance Report + DRS
+   FEATURE 1 — EMPLOYEE ATTENDANCE REPORT MODAL
 ================================================================ */
 
-/* ── META update for new tabs ─────────────────────────────────── */
-META['drs'] = { title: 'Delivery Run Sheets', sub: 'Upload & manage daily delivery records' };
-
-/* ── Patch switchTab to handle drs ───────────────────────────── */
-const _origSwitchTab = switchTab;
-switchTab = function(id, el) {
-  _origSwitchTab(id, el);
-  if (id === 'drs') { fillDrsDrops(); renderDRSList(); }
-};
-
-/* ================================================================
-   FEATURE 1 — EMPLOYEE ATTENDANCE REPORT (PDF-style modal)
-================================================================ */
-
-function openEmpReport(empId) {
+function openER(empId) {
   const emp = employees.find(e => e._id === empId);
   if (!emp) return;
-  document.getElementById('empReportModal').dataset.empId = empId;
+  const modal = document.getElementById('erModal');
+  modal.dataset.empId = empId;
   document.getElementById('erAvatar').textContent = ini(emp.name);
   document.getElementById('erName').textContent   = emp.name;
-  document.getElementById('erMeta').textContent   = `${emp.empId} · ${emp.role} · ₹${emp.wage}/day`;
-  const mSel = document.getElementById('erMonthFilter');
-  if (mSel) mSel.value = curMo();
-  _showEmpReportLoading();
-  document.getElementById('empReportModal').classList.add('open');
+  document.getElementById('erMeta').textContent   = emp.empId + ' · ' + emp.role + ' · ₹' + emp.wage + '/day';
+  document.getElementById('erMonth').value = curMo();
+  modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';
-  _loadEmpReport(emp, curMo());
+  fetchER(emp, curMo());
 }
 
-function _showEmpReportLoading() {
-  document.getElementById('erBody').innerHTML = `
-    <div style="text-align:center;padding:40px">
-      <div style="margin:0 auto 16px;width:36px;height:36px;border:3px solid #e5e7eb;border-top-color:#e63946;border-radius:50%;animation:spin .8s linear infinite"></div>
-      <div style="color:#6b7280;font-size:13px">Loading report…</div>
-    </div>`;
-}
-
-function erMonthChanged() {
-  const empId = document.getElementById('empReportModal').dataset.empId;
-  const month = document.getElementById('erMonthFilter').value;
-  const emp   = employees.find(e => e._id === empId);
-  if (!emp) return;
-  _showEmpReportLoading();
-  _loadEmpReport(emp, month || '');
-}
-
-function closeEmpReport() {
-  document.getElementById('empReportModal').classList.remove('open');
+function closeER() {
+  document.getElementById('erModal').style.display = 'none';
   document.body.style.overflow = '';
 }
 
-function printEmpReport() {
-  const modal      = document.getElementById('empReportModal');
-  const reportHtml = modal.dataset.reportHtml || document.getElementById('erBody').innerHTML;
-  const name       = modal.dataset.empName || document.getElementById('erName').textContent;
-
-  const fullHtml = `<!DOCTYPE html><html><head>
-    <meta charset="utf-8"/>
-    <meta name="viewport" content="width=device-width,initial-scale=1"/>
-    <title>Attendance Report — ${name}</title>
-    <style>
-      *{box-sizing:border-box;margin:0;padding:0}
-      body{font-family:'Segoe UI',Arial,sans-serif;color:#111;background:#fff;padding:24px;font-size:13px}
-      table{width:100%;border-collapse:collapse;margin-top:8px}
-      th,td{padding:8px 10px;border:1px solid #e5e7eb;font-size:11px}
-      th{background:#f3f4f6;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
-      .footer{font-size:10px;color:#9ca3af;margin-top:20px;text-align:right;border-top:1px solid #e5e7eb;padding-top:8px}
-    </style>
-  </head><body>
-    ${reportHtml}
-    <div class="footer">KingPloyee — Branch Management System</div>
-  </body></html>`;
-
-  // Use Blob URL — works on mobile browsers without popup blockers
-  const blob = new Blob([fullHtml], { type: 'text/html' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = `Attendance_Report_${name.replace(/\s+/g,'_')}.html`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 3000);
-  toast('Report downloaded! Open the .html file and print/save as PDF from browser.', 'success');
+function erMonthChange() {
+  const modal = document.getElementById('erModal');
+  const emp   = employees.find(e => e._id === modal.dataset.empId);
+  const month = document.getElementById('erMonth').value;
+  if (emp) fetchER(emp, month);
 }
 
-async function downloadMonthDRS(empId, month, empName) {
+async function fetchER(emp, month) {
+  const body = document.getElementById('erBody');
+  body.innerHTML = '<div style="text-align:center;padding:40px;color:#94a3b8"><i class="fas fa-spinner fa-spin" style="font-size:24px"></i><div style="margin-top:12px;font-size:13px">Loading…</div></div>';
+
   try {
-    toast('Fetching run sheets from server…', 'info');
-    const res  = await DRSAPI.monthFiles(empId, month);
-    const all  = res.data || [];
+    const params = { employeeId: emp._id };
+    if (month) params.month = month;
 
-    if (!all.length) { toast('No run sheets found for this month.', 'warn'); return; }
+    const [attRes, advRes] = await Promise.all([
+      AttendanceAPI.list(params),
+      SalaryAPI.listAdvances({ employeeId: emp._id, month: month || undefined })
+    ]);
 
-    const emp = employees.find(e => e._id === empId);
-    const [yr, mo] = month.split('-');
-    const monthLabel = new Date(yr, mo - 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' });
-    const name = emp?.name || empName || all[0]?.employee?.name || 'Employee';
+    const recs = attRes.data || [];
+    const advs = advRes.data || [];
 
-    // Build image-only pages (embed PDF doesn't work in Blob/offline context on mobile)
-    const pages = all.sort((a, b) => a.date.localeCompare(b.date)).map(r => {
-      if (r.fileType === 'application/pdf') {
-        // For PDFs embed as object with fallback link
-        return `
-          <div class="page">
-            <div class="pg-header"><strong>${r.date}</strong>${r.note ? ' · ' + r.note : ''} — ${r.fileName}</div>
-            <object data="${r.fileData}" type="application/pdf" style="width:100%;height:90vh;border:none">
-              <p style="padding:20px;color:#6b7280;text-align:center">
-                PDF preview not available inline.<br/>
-                <a href="${r.fileData}" download="${r.fileName}" style="color:#e63946;font-weight:700">⬇ Download this sheet (${r.date})</a>
-              </p>
-            </object>
-          </div>`;
-      } else {
-        return `
-          <div class="page">
-            <div class="pg-header"><strong>${r.date}</strong>${r.note ? ' · ' + r.note : ''} — ${r.fileName}</div>
-            <img src="${r.fileData}" style="max-width:100%;display:block;margin:0 auto;border-radius:4px"/>
-          </div>`;
-      }
-    }).join('');
+    const present  = recs.filter(r => r.status === 'Present').length;
+    const halfDay  = recs.filter(r => r.status === 'Half-Day').length;
+    const absent   = recs.filter(r => r.status === 'Absent').length;
+    const leave    = recs.filter(r => r.status === 'Leave').length;
+    const totalHrs = recs.reduce((s, r) => s + (r.hoursWorked || 0), 0);
+    const avgHrs   = recs.filter(r => r.hoursWorked > 0).length
+      ? totalHrs / recs.filter(r => r.hoursWorked > 0).length : 0;
+    const baseSal  = (present * emp.wage) + (halfDay * emp.wage * 0.5);
+    const totalAdv = advs.reduce((s, a) => s + (a.amount || 0), 0);
+    const netPay   = baseSal - totalAdv;
 
-    const fullHtml = `<!DOCTYPE html><html><head>
-      <meta charset="utf-8"/>
-      <meta name="viewport" content="width=device-width,initial-scale=1"/>
-      <title>DRS ${name} — ${monthLabel}</title>
-      <style>
-        *{box-sizing:border-box}
-        body{margin:0;font-family:Arial,sans-serif;background:#f3f4f6}
-        .cover{background:linear-gradient(135deg,#e63946,#1d4ed8);color:#fff;padding:48px 32px;text-align:center;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;page-break-after:always}
-        .cover h1{font-size:28px;margin:0 0 8px}
-        .cover p{font-size:15px;opacity:.85;margin:4px 0}
-        .cover .meta{margin-top:20px;font-size:13px;opacity:.7}
-        .page{background:#fff;padding:16px;min-height:100vh;page-break-after:always;border-bottom:2px solid #e5e7eb}
-        .pg-header{background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#374151}
-        @media print{
-          body{background:#fff}
-          .cover,.page{page-break-after:always}
-        }
-      </style>
-    </head><body>
-      <div class="cover">
-        <div style="font-size:52px;margin-bottom:16px">📦</div>
-        <h1>Delivery Run Sheets</h1>
-        <p style="font-size:18px;font-weight:700">${name}</p>
-        <p>${emp?.empId || ''} · ${emp?.role || ''}</p>
-        <div class="meta">${monthLabel} · ${all.length} Run Sheet${all.length !== 1 ? 's' : ''}</div>
-        <div class="meta" style="margin-top:8px">KingPloyee — Branch Management System</div>
-      </div>
-      ${pages}
-    </body></html>`;
+    const periodLabel = month
+      ? new Date(month + '-01').toLocaleString('en-IN', { month: 'long', year: 'numeric' })
+      : 'All Time';
 
-    // Download as HTML file — user opens it and prints/saves as PDF from browser
-    const blob = new Blob([fullHtml], { type: 'text/html' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = `DRS_${name.replace(/\s+/g,'_')}_${month}.html`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-    toast(`${all.length} run sheets downloaded! Open the file in browser → Print → Save as PDF.`, 'success');
+    const statusColor = { Present: '#4ade80', Absent: '#f87171', 'Half-Day': '#fbbf24', Leave: '#60a5fa' };
+
+    const tableRows = recs.length
+      ? recs.sort((a, b) => b.date.localeCompare(a.date)).map(r =>
+          '<tr>' +
+          '<td style="font-family:monospace;font-size:11px;white-space:nowrap">' + r.date + '</td>' +
+          '<td><span style="color:' + (statusColor[r.status] || '#e2e8f0') + ';font-weight:700;font-size:12px">' + r.status + '</span></td>' +
+          '<td style="font-size:12px">' + (r.checkIn || '—') + '</td>' +
+          '<td style="font-size:12px">' + (r.checkOut || '—') + '</td>' +
+          '<td style="font-size:12px;font-family:monospace">' + (r.hoursWorked ? toHoursMin(r.hoursWorked) : '—') + '</td>' +
+          '<td style="font-size:11px;color:#94a3b8">' + (r.notes || '—') + '</td>' +
+          '</tr>'
+        ).join('')
+      : '<tr><td colspan="6" style="text-align:center;padding:24px;color:#94a3b8">No records for this period.</td></tr>';
+
+    // Build full report HTML (no CSS vars — only real colors for PDF compat)
+    const reportHTML =
+      '<div style="margin-bottom:18px">' +
+        '<div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Period: ' + periodLabel + '</div>' +
+        '<div style="font-size:11px;color:#64748b">Generated: ' + new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) + '</div>' +
+      '</div>' +
+
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px">' +
+        [['Present', present, '#4ade80'], ['Half-Day', halfDay, '#fbbf24'], ['Absent', absent, '#f87171'],
+         ['Leave', leave, '#60a5fa'], ['Total Hrs', toHoursMin(totalHrs), '#a78bfa'], ['Avg Hrs/Day', toHoursMin(avgHrs), '#34d399']]
+        .map(function(x) {
+          return '<div style="background:#12122a;border:1px solid #2d2d44;border-radius:10px;padding:12px;text-align:center">' +
+            '<div style="font-size:18px;font-weight:700;color:' + x[2] + ';font-family:monospace">' + x[1] + '</div>' +
+            '<div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-top:4px">' + x[0] + '</div>' +
+          '</div>';
+        }).join('') +
+      '</div>' +
+
+      '<div style="background:#12122a;border:1px solid #2d2d44;border-radius:10px;padding:14px;margin-bottom:18px;display:flex;gap:16px;flex-wrap:wrap;align-items:center">' +
+        '<div><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Base Salary</div><div style="font-size:17px;font-weight:700;color:#e2e8f0;font-family:monospace">₹' + Number(baseSal).toLocaleString('en-IN', {minimumFractionDigits:2}) + '</div></div>' +
+        '<div style="color:#475569;font-size:18px">−</div>' +
+        '<div><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Advance</div><div style="font-size:17px;font-weight:700;color:#f87171;font-family:monospace">₹' + Number(totalAdv).toLocaleString('en-IN', {minimumFractionDigits:2}) + '</div></div>' +
+        '<div style="color:#475569;font-size:18px">=</div>' +
+        '<div><div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Net Payable</div><div style="font-size:22px;font-weight:800;color:#4ade80;font-family:monospace">₹' + Number(netPay).toLocaleString('en-IN', {minimumFractionDigits:2}) + '</div></div>' +
+      '</div>' +
+
+      '<div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.7px;margin-bottom:8px">Attendance Records (' + recs.length + ')</div>' +
+      '<div style="overflow-x:auto;border:1px solid #2d2d44;border-radius:8px">' +
+        '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+          '<thead><tr style="background:#12122a">' +
+            '<th style="padding:8px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:#94a3b8;border-bottom:1px solid #2d2d44">Date</th>' +
+            '<th style="padding:8px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:#94a3b8;border-bottom:1px solid #2d2d44">Status</th>' +
+            '<th style="padding:8px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:#94a3b8;border-bottom:1px solid #2d2d44">In</th>' +
+            '<th style="padding:8px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:#94a3b8;border-bottom:1px solid #2d2d44">Out</th>' +
+            '<th style="padding:8px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:#94a3b8;border-bottom:1px solid #2d2d44">Hours</th>' +
+            '<th style="padding:8px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:#94a3b8;border-bottom:1px solid #2d2d44">Notes</th>' +
+          '</tr></thead>' +
+          '<tbody>' + tableRows + '</tbody>' +
+        '</table>' +
+      '</div>';
+
+    body.innerHTML = reportHTML;
+    // Store for download
+    document.getElementById('erModal').dataset.reportHtml = reportHTML;
+    document.getElementById('erModal').dataset.empName    = emp.name;
+    document.getElementById('erModal').dataset.period     = periodLabel;
+
   } catch (err) {
-    toast('Failed: ' + err.message, 'error');
+    body.innerHTML = '<div style="color:#f87171;padding:24px;text-align:center"><i class="fas fa-circle-xmark" style="font-size:28px;display:block;margin-bottom:12px"></i>' + err.message + '</div>';
   }
 }
 
+function downloadER() {
+  const modal      = document.getElementById('erModal');
+  const reportHtml = modal.dataset.reportHtml;
+  const empName    = modal.dataset.empName || 'Employee';
+  const period     = modal.dataset.period  || '';
+  if (!reportHtml) { toast('Report not loaded yet.', 'error'); return; }
 
+  const emp = employees.find(e => e._id === modal.dataset.empId);
 
-/* ================================================================
-   DRS FUNCTIONS — Server based
-================================================================ */
+  const fullPage = '<!DOCTYPE html><html><head>' +
+    '<meta charset="utf-8"/>' +
+    '<title>Report - ' + empName + ' - ' + period + '</title>' +
+    '<style>' +
+      'body{font-family:Arial,sans-serif;background:#fff;color:#111;padding:28px;margin:0}' +
+      'table{width:100%;border-collapse:collapse}' +
+      'th,td{padding:7px 10px;border:1px solid #e5e7eb;font-size:11px}' +
+      'th{background:#f3f4f6;font-size:10px;text-transform:uppercase;letter-spacing:.4px}' +
+      '.cover{text-align:center;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #e5e7eb}' +
+      '.cover h1{font-size:22px;margin:0 0 4px}' +
+      '.cover p{font-size:13px;color:#6b7280;margin:2px 0}' +
+      '/* Override dark backgrounds for print */' +
+      'div[style*="background:#12122a"]{background:#f9fafb!important;border-color:#e5e7eb!important}' +
+      'div[style*="background:#1a1a"]{background:#f9fafb!important}' +
+    '</style>' +
+    '</head><body>' +
+    '<div class="cover">' +
+      '<h1>' + empName + '</h1>' +
+      '<p>' + (emp ? emp.empId + ' · ' + emp.role + ' · ₹' + emp.wage + '/day' : '') + '</p>' +
+      '<p><strong>Attendance Report — ' + period + '</strong></p>' +
+      '<p style="font-size:11px;color:#9ca3af">KingPloyee · Generated ' + new Date().toLocaleDateString('en-IN') + '</p>' +
+    '</div>' +
+    reportHtml +
+    '<script>window.onload=function(){window.print();}<\/script>' +
+    '</body></html>';
 
-function fillDrsDrops() {
-  const opts = employees.map(e => `<option value="${e._id}">${e.name} (${e.empId})</option>`).join('');
-  const drsEmp = document.getElementById('drsEmp');
-  if (drsEmp) drsEmp.innerHTML = `<option value="">— Select Employee —</option>${opts}`;
-  const drsFilter = document.getElementById('drsFilterEmp');
-  if (drsFilter) drsFilter.innerHTML = `<option value="">All Employees</option>${opts}`;
-  const dm = document.getElementById('drsFilterMo');
-  if (dm && !dm.value) dm.value = curMo();
+  const blob = new Blob([fullPage], { type: 'text/html' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = 'Report_' + empName.replace(/\s+/g,'_') + '_' + period.replace(/\s+/g,'_') + '.html';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 3000);
+  toast('Report downloaded! Open the file → browser will print/save as PDF.', 'success');
 }
 
-function drsFileSelected(input) {
+// Close modal on backdrop click
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('erModal')?.addEventListener('click', function(e) {
+    if (e.target === document.getElementById('erModal')) closeER();
+  });
+});
+
+/* ================================================================
+   FEATURE 2 — DRS (Delivery Run Sheets) — Server based
+================================================================ */
+
+function drsFillDrops() {
+  const opts = employees.map(e => '<option value="' + e._id + '">' + e.name + ' (' + e.empId + ')</option>').join('');
+  var el;
+  el = document.getElementById('drsEmp');
+  if (el) el.innerHTML = '<option value="">— Select Employee —</option>' + opts;
+  el = document.getElementById('drsFilterEmp');
+  if (el) el.innerHTML = '<option value="">All Employees</option>' + opts;
+  el = document.getElementById('drsFilterMo');
+  if (el && !el.value) el.value = curMo();
+}
+
+function drsFileChosen(input) {
   const files = input.files;
   if (!files || !files.length) return;
   const span = document.getElementById('drsFileName');
-  if (span) span.textContent = files.length === 1 ? files[0].name : `${files.length} files selected`;
+  if (span) span.textContent = files.length === 1 ? files[0].name : files.length + ' files selected';
   const zone = document.getElementById('drsDropZone');
-  if (zone) zone.classList.add('has-file');
+  if (zone) zone.style.borderColor = '#4ade80';
+}
+
+function fileToB64(file) {
+  return new Promise(function(resolve, reject) {
+    const reader = new FileReader();
+    reader.onload  = function() { resolve(reader.result); };
+    reader.onerror = function() { reject(new Error('File read failed')); };
+    reader.readAsDataURL(file);
+  });
 }
 
 async function saveDRS() {
@@ -995,187 +1025,236 @@ async function saveDRS() {
   const date      = v('drsDate');
   const note      = v('drsNote');
   const fileInput = document.getElementById('drsFile');
-  const files     = fileInput?.files;
+  const files     = fileInput ? fileInput.files : null;
 
-  if (!empId)              { toast('Please select an employee.', 'error'); return; }
-  if (!date)               { toast('Please select the date of this run sheet.', 'error'); return; }
-  if (!files || !files.length) { toast('Please choose at least one file.', 'error'); return; }
+  if (!empId)              { toast('Select an employee.', 'error'); return; }
+  if (!date)               { toast('Select the date.', 'error'); return; }
+  if (!files || !files.length) { toast('Choose at least one file.', 'error'); return; }
 
   setBtnLoading('saveDrsBtn', true);
   try {
     const emp = employees.find(e => e._id === empId);
-    let uploaded = 0;
     for (let i = 0; i < files.length; i++) {
       const file     = files[i];
-      const fileData = await fileToBase64(file);
+      const fileData = await fileToB64(file);
       await DRSAPI.create({
         employeeId: empId,
-        date,
-        fileName:  file.name,
-        fileType:  file.type,
-        fileData,
-        note: files.length > 1 ? `${note ? note + ' · ' : ''}File ${i+1}/${files.length}` : note,
+        date:       date,
+        fileName:   file.name,
+        fileType:   file.type,
+        fileData:   fileData,
+        note:       files.length > 1 ? (note ? note + ' [' + (i+1) + '/' + files.length + ']' : 'File ' + (i+1) + '/' + files.length) : note,
       });
-      uploaded++;
     }
-    set('drsEmp',''); set('drsDate', today()); set('drsNote','');
+    set('drsEmp', ''); set('drsDate', today()); set('drsNote', '');
     fileInput.value = '';
-    document.getElementById('drsFileName').textContent = 'Click to choose files or drag & drop here';
-    document.getElementById('drsDropZone')?.classList.remove('has-file');
-    await renderDRSList();
-    toast(`${uploaded} run sheet${uploaded>1?'s':''} for ${emp?.name||'employee'} (${date}) saved!`, 'success');
-  } catch (e) {
-    toast('Upload failed: ' + e.message, 'error');
+    var span = document.getElementById('drsFileName');
+    if (span) span.textContent = 'Tap to choose · multiple files allowed';
+    var zone = document.getElementById('drsDropZone');
+    if (zone) zone.style.borderColor = '';
+    await loadDRS();
+    var nm = emp ? emp.name : 'employee';
+    toast(files.length + ' sheet' + (files.length > 1 ? 's' : '') + ' for ' + nm + ' (' + date + ') saved!', 'success');
+  } catch (err) {
+    toast('Upload failed: ' + err.message, 'error');
   } finally {
     setBtnLoading('saveDrsBtn', false, '<i class="fas fa-floppy-disk"></i> Save Run Sheet');
   }
 }
 
-function fileToBase64(file) {
-  return new Promise((res, rej) => {
-    const reader = new FileReader();
-    reader.onload  = () => res(reader.result);
-    reader.onerror = () => rej(new Error('File read failed'));
-    reader.readAsDataURL(file);
-  });
-}
-
-async function renderDRSList() {
+async function loadDRS() {
   const wrap = document.getElementById('drsListWrap');
   if (!wrap) return;
+
   const filterEmp  = v('drsFilterEmp');
   const filterMo   = v('drsFilterMo');
   const filterDate = v('drsFilterDate');
 
-  wrap.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text-muted)">
-    <i class="fas fa-spinner fa-spin" style="font-size:22px"></i>
-    <div style="margin-top:10px;font-size:13px">Loading…</div></div>`;
+  wrap.innerHTML = '<div style="text-align:center;padding:32px;color:#94a3b8"><i class="fas fa-spinner fa-spin" style="font-size:20px"></i><div style="margin-top:10px;font-size:13px">Loading…</div></div>';
 
   try {
     const params = {};
-    if (filterEmp)  params.employeeId = filterEmp;
-    if (filterDate) params.date       = filterDate;
-    else if (filterMo) params.month   = filterMo;
+    if (filterEmp)       params.employeeId = filterEmp;
+    if (filterDate)      params.date       = filterDate;
+    else if (filterMo)   params.month      = filterMo;
 
     const res  = await DRSAPI.list(params);
     const data = res.data || [];
 
     if (!data.length) {
-      wrap.innerHTML = `<div class="empty-state"><i class="fas fa-truck-fast"></i><h3>No run sheets found</h3><p>Try changing the filters or upload a new run sheet.</p></div>`;
+      wrap.innerHTML = '<div class="empty-state"><i class="fas fa-truck-fast"></i><h3>No run sheets found</h3><p>Try different filters or upload above.</p></div>';
       return;
     }
 
+    // Group by employee
     const byEmp = {};
-    data.forEach(r => {
-      const eid = r.employee?._id || r.employee;
-      if (!byEmp[eid]) byEmp[eid] = { name: r.employee?.name || '—', role: r.employee?.role || '', records: [] };
+    data.forEach(function(r) {
+      const eid = (r.employee && r.employee._id) ? r.employee._id : r.employee;
+      if (!byEmp[eid]) byEmp[eid] = { name: (r.employee && r.employee.name) || '—', role: (r.employee && r.employee.role) || '', records: [] };
       byEmp[eid].records.push(r);
     });
 
     const month = filterMo || curMo();
-    wrap.innerHTML = Object.entries(byEmp).map(([eid, grp]) => {
-      const rows = grp.records.map(r => `
-        <div class="drs-row">
-          <div style="display:flex;align-items:center;gap:10px">
-            <div class="drs-file-icon ${r.fileType==='application/pdf'?'pdf':'img'}">
-              <i class="fas ${r.fileType==='application/pdf'?'fa-file-pdf':'fa-file-image'}"></i>
-            </div>
-            <div>
-              <div style="font-size:13px;font-weight:600">${r.date}</div>
-              <div style="font-size:11px;color:var(--text-muted)">${r.fileName}${r.note?' · '+r.note:''}</div>
-            </div>
-          </div>
-          <div style="display:flex;gap:8px">
-            <button class="btn-icon" onclick="viewDRS('${r._id}')" title="View"><i class="fas fa-eye"></i></button>
-            <button class="btn-icon" onclick="downloadDRS('${r._id}','${r.fileName}')" title="Download"><i class="fas fa-download"></i></button>
-            <button class="btn-icon danger" onclick="deleteDRS('${r._id}')" title="Delete"><i class="fas fa-trash-can"></i></button>
-          </div>
-        </div>`).join('');
 
-      return `
-        <div class="drs-emp-group">
-          <div class="drs-emp-header">
-            <div style="display:flex;align-items:center;gap:10px">
-              <div class="emp-avatar">${ini(grp.name)}</div>
-              <div>
-                <div style="font-weight:700;font-size:14px">${grp.name}</div>
-                <div style="font-size:11px;color:var(--text-muted)">${grp.role} · ${grp.records.length} sheet${grp.records.length!==1?'s':''}</div>
-              </div>
-            </div>
-            <button class="btn btn-secondary" style="font-size:12px;padding:7px 14px"
-              onclick="downloadMonthDRS('${eid}','${month}','${grp.name}')">
-              <i class="fas fa-file-arrow-down"></i> Download Month PDF
-            </button>
-          </div>
-          <div class="drs-rows">${rows}</div>
-        </div>`;
+    wrap.innerHTML = Object.keys(byEmp).map(function(eid) {
+      const grp = byEmp[eid];
+      const rows = grp.records.map(function(r) {
+        const isPdf = r.fileType === 'application/pdf';
+        return '<div style="display:flex;align-items:center;justify-content:space-between;padding:11px 16px;border-bottom:1px solid var(--border);gap:8px">' +
+          '<div style="display:flex;align-items:center;gap:10px">' +
+            '<div style="width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;background:' + (isPdf ? 'rgba(239,68,68,.15)' : 'rgba(59,130,246,.15)') + ';color:' + (isPdf ? '#f87171' : '#60a5fa') + '">' +
+              '<i class="fas ' + (isPdf ? 'fa-file-pdf' : 'fa-file-image') + '"></i>' +
+            '</div>' +
+            '<div>' +
+              '<div style="font-size:13px;font-weight:600">' + r.date + '</div>' +
+              '<div style="font-size:11px;color:var(--text-muted)">' + r.fileName + (r.note ? ' · ' + r.note : '') + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div style="display:flex;gap:6px;flex-shrink:0">' +
+            '<button class="btn-icon" onclick="viewDRS(\'' + r._id + '\')" title="View"><i class="fas fa-eye"></i></button>' +
+            '<button class="btn-icon" onclick="dlDRS(\'' + r._id + '\',\'' + r.fileName.replace(/'/g,"\\'") + '\')" title="Download"><i class="fas fa-download"></i></button>' +
+            '<button class="btn-icon danger" onclick="delDRS(\'' + r._id + '\')" title="Delete"><i class="fas fa-trash-can"></i></button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+
+      return '<div style="border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:16px">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--surface2);border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">' +
+          '<div style="display:flex;align-items:center;gap:10px">' +
+            '<div class="emp-avatar">' + ini(grp.name) + '</div>' +
+            '<div>' +
+              '<div style="font-weight:700;font-size:14px">' + grp.name + '</div>' +
+              '<div style="font-size:11px;color:var(--text-muted)">' + grp.role + ' · ' + grp.records.length + ' sheet' + (grp.records.length !== 1 ? 's' : '') + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<button class="btn btn-secondary" style="font-size:12px;padding:7px 12px" onclick="dlMonthDRS(\'' + eid + '\',\'' + month + '\',\'' + grp.name.replace(/'/g,"\\'") + '\')">' +
+            '<i class="fas fa-file-arrow-down"></i> Download Month PDF' +
+          '</button>' +
+        '</div>' +
+        '<div>' + rows + '</div>' +
+      '</div>';
     }).join('');
+
   } catch (err) {
-    wrap.innerHTML = `<div style="color:var(--red);padding:24px;text-align:center">
-      <i class="fas fa-circle-xmark" style="font-size:28px;display:block;margin-bottom:10px"></i>${err.message}</div>`;
+    wrap.innerHTML = '<div style="color:var(--red);padding:24px;text-align:center"><i class="fas fa-circle-xmark" style="font-size:24px;display:block;margin-bottom:10px"></i>' + err.message + '</div>';
   }
 }
 
 async function viewDRS(id) {
   try {
-    toast('Loading file…', 'info');
+    toast('Loading…', 'info');
     const res = await DRSAPI.getFile(id);
     const rec = res.data;
-    const win = window.open('', '_blank');
     if (rec.fileType === 'application/pdf') {
-      win.document.write(`<html><body style="margin:0"><embed src="${rec.fileData}" type="application/pdf" width="100%" height="100%"/></body></html>`);
+      // Download directly for PDF (mobile browsers can't embed)
+      const a = document.createElement('a');
+      a.href = rec.fileData;
+      a.download = rec.fileName;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
     } else {
-      win.document.write(`<html><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="${rec.fileData}" style="max-width:100%;max-height:100vh"/></body></html>`);
+      const win = window.open('', '_blank');
+      if (win) {
+        win.document.write('<html><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="' + rec.fileData + '" style="max-width:100%;max-height:100vh"/></body></html>');
+      } else {
+        const a = document.createElement('a');
+        a.href = rec.fileData; a.download = rec.fileName;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      }
     }
-  } catch (err) { toast('Could not load: ' + err.message, 'error'); }
+  } catch (err) { toast('Failed: ' + err.message, 'error'); }
 }
 
-async function downloadDRS(id, fileName) {
+async function dlDRS(id, fileName) {
   try {
-    toast('Preparing download…', 'info');
+    toast('Downloading…', 'info');
     const res = await DRSAPI.getFile(id);
     const rec = res.data;
     const a   = document.createElement('a');
     a.href     = rec.fileData;
-    a.download = `DRS_${rec.employee?.name||''}_${rec.date}_${fileName}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    a.download = 'DRS_' + ((rec.employee && rec.employee.name) || '') + '_' + rec.date + '_' + fileName;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
   } catch (err) { toast('Download failed: ' + err.message, 'error'); }
 }
 
-async function deleteDRS(id) {
-  if (!confirm('Delete this run sheet? This cannot be undone.')) return;
+async function delDRS(id) {
+  if (!confirm('Delete this run sheet?')) return;
   try {
     await DRSAPI.remove(id);
-    await renderDRSList();
-    toast('Run sheet deleted.', 'info');
-  } catch (err) { toast('Delete failed: ' + err.message, 'error'); }
+    await loadDRS();
+    toast('Deleted.', 'info');
+  } catch (err) { toast('Failed: ' + err.message, 'error'); }
 }
 
-function setBtnState(loading) {}
+async function dlMonthDRS(empId, month, empName) {
+  try {
+    toast('Fetching run sheets…', 'info');
+    const res = await DRSAPI.monthFiles(empId, month);
+    const all = res.data || [];
+    if (!all.length) { toast('No run sheets for this month.', 'warn'); return; }
 
-/* ── Drag & Drop for DRS upload zone ─────────────────────────── */
-document.addEventListener('DOMContentLoaded', () => {
+    const emp = employees.find(function(e) { return e._id === empId; });
+    const parts = month.split('-');
+    const monthLabel = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1)
+      .toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+    const name = (emp && emp.name) || empName || 'Employee';
+
+    // Build HTML with all sheets embedded
+    const pages = all.sort(function(a,b){return a.date.localeCompare(b.date);}).map(function(r) {
+      const header = '<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px 14px;margin-bottom:10px;font-size:12px;color:#374151"><strong>' + r.date + '</strong>' + (r.note ? ' · ' + r.note : '') + ' — ' + r.fileName + '</div>';
+      if (r.fileType === 'application/pdf') {
+        return '<div style="page-break-after:always;padding:12px">' + header +
+          '<p style="text-align:center;padding:20px;color:#6b7280;border:1px dashed #d1d5db;border-radius:8px">PDF: <a href="' + r.fileData + '" download="' + r.fileName + '" style="color:#e63946;font-weight:700">Download ' + r.date + ' sheet</a></p>' +
+          '</div>';
+      }
+      return '<div style="page-break-after:always;padding:12px">' + header +
+        '<img src="' + r.fileData + '" style="max-width:100%;border-radius:6px;display:block;margin:0 auto"/>' +
+        '</div>';
+    }).join('');
+
+    const fullHtml = '<!DOCTYPE html><html><head>' +
+      '<meta charset="utf-8"/>' +
+      '<title>DRS ' + name + ' ' + monthLabel + '</title>' +
+      '<style>body{margin:0;font-family:Arial,sans-serif;background:#fff}' +
+      '.cover{background:linear-gradient(135deg,#e63946,#1d4ed8);color:#fff;padding:48px 32px;text-align:center;page-break-after:always;min-height:90vh;display:flex;flex-direction:column;align-items:center;justify-content:center}' +
+      '.cover h1{font-size:28px;margin:0 0 8px}.cover p{margin:4px 0;font-size:15px;opacity:.85}' +
+      '@media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style>' +
+      '</head><body>' +
+      '<div class="cover"><div style="font-size:52px;margin-bottom:16px">📦</div><h1>Delivery Run Sheets</h1><p style="font-size:18px;font-weight:700">' + name + '</p>' +
+      '<p>' + ((emp && emp.empId) || '') + (emp && emp.role ? ' · ' + emp.role : '') + '</p>' +
+      '<p>' + monthLabel + ' · ' + all.length + ' sheet' + (all.length !== 1 ? 's' : '') + '</p>' +
+      '<p style="opacity:.6;font-size:13px;margin-top:12px">KingPloyee — Branch Management System</p></div>' +
+      pages +
+      '<script>window.onload=function(){window.print();}<\/script>' +
+      '</body></html>';
+
+    const blob = new Blob([fullHtml], { type: 'text/html' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = 'DRS_' + name.replace(/\s+/g, '_') + '_' + month + '.html';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 5000);
+    toast('Downloaded! Open the file in browser → Print → Save as PDF', 'success');
+  } catch (err) { toast('Failed: ' + err.message, 'error'); }
+}
+
+/* drag-drop for DRS */
+document.addEventListener('DOMContentLoaded', function() {
   const zone = document.getElementById('drsDropZone');
   if (zone) {
-    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
-    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
-    zone.addEventListener('drop', e => {
-      e.preventDefault();
-      zone.classList.remove('drag-over');
-      const input = document.getElementById('drsFile');
-      if (e.dataTransfer.files.length) {
-        // DataTransfer files to input
-        const dt = new DataTransfer();
-        Array.from(e.dataTransfer.files).forEach(f => dt.items.add(f));
-        input.files = dt.files;
-        drsFileSelected(input);
+    zone.addEventListener('dragover', function(e){ e.preventDefault(); zone.style.borderColor='#e63946'; });
+    zone.addEventListener('dragleave', function(){ zone.style.borderColor=''; });
+    zone.addEventListener('drop', function(e){
+      e.preventDefault(); zone.style.borderColor='';
+      var input = document.getElementById('drsFile');
+      if (e.dataTransfer.files.length && input) {
+        try {
+          var dt = new DataTransfer();
+          Array.from(e.dataTransfer.files).forEach(function(f){ dt.items.add(f); });
+          input.files = dt.files;
+          drsFileChosen(input);
+        } catch(ex) {}
       }
     });
-  }
-  const erModal = document.getElementById('empReportModal');
-  if (erModal) {
-    erModal.addEventListener('click', e => { if (e.target === erModal) closeEmpReport(); });
   }
 });
