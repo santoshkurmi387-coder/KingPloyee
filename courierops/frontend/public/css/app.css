@@ -582,112 +582,18 @@ tbody tr:hover { background:rgba(255,255,255,.02); }
   .dash-grid { grid-template-columns:1fr; }
 }
 
-/* ================================================================
-   PATCH v2 — Employee Report Modal + DRS Styles
-================================================================ */
-
-/* ── Employee Report Modal ────────────────────────────────────── */
-#empReportModal {
-  display:none; position:fixed; inset:0; z-index:6000;
-  background:rgba(0,0,0,.72); backdrop-filter:blur(4px);
-  align-items:center; justify-content:center; padding:16px;
+/* ── DRS Upload Zone ───────────────────────────────────────────── */
+.drs-drop {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 28px 20px;
+  text-align: center;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transition: border-color .2s, background .2s;
+  background: var(--bg);
 }
-#empReportModal.open { display:flex; }
-
-.emp-report-box {
-  background:var(--surface); border:1px solid var(--border);
-  border-radius:var(--radius); width:100%; max-width:760px;
-  max-height:92vh; display:flex; flex-direction:column;
-  box-shadow:0 32px 80px rgba(0,0,0,.7);
-  animation:cardIn .28s ease;
-}
-
-.emp-report-header {
-  display:flex; align-items:center; justify-content:space-between;
-  padding:18px 24px; border-bottom:1px solid var(--border);
-  flex-shrink:0;
-}
-
-.emp-report-body {
-  padding:24px; overflow-y:auto; flex:1;
-}
-
-.emp-report-footer {
-  display:flex; gap:10px; justify-content:flex-end;
-  padding:16px 24px; border-top:1px solid var(--border);
-  flex-shrink:0;
-}
-
-/* Status colors inside report body */
-.emp-report-body .present { color:var(--green); font-weight:700; }
-.emp-report-body .absent  { color:var(--red);   font-weight:700; }
-.emp-report-body .half    { color:var(--amber);  font-weight:700; }
-.emp-report-body .leave   { color:var(--blue-light); font-weight:700; }
-
-/* ── DRS Upload Zone ──────────────────────────────────────────── */
-.drs-upload-area {
-  background:var(--bg); border:2px dashed var(--border);
-  border-radius:var(--radius-sm); padding:28px 20px;
-  text-align:center; cursor:pointer;
-  display:flex; flex-direction:column; align-items:center; gap:8px;
-  transition:all var(--transition);
-}
-.drs-upload-area:hover,
-.drs-upload-area.drag-over {
-  border-color:var(--red); background:var(--red-bg);
-}
-.drs-upload-area.has-file {
-  border-color:var(--green); background:var(--green-bg);
-}
-.drs-upload-area i {
-  font-size:28px; color:var(--text-muted);
-  transition:color var(--transition);
-}
-.drs-upload-area:hover i,
-.drs-upload-area.drag-over i { color:var(--red); }
-.drs-upload-area.has-file i  { color:var(--green); }
-.drs-upload-area span        { font-size:13px; color:var(--text-dim); }
-
-/* ── DRS Employee Group ───────────────────────────────────────── */
-.drs-emp-group {
-  border:1px solid var(--border); border-radius:var(--radius);
-  overflow:hidden; margin-bottom:18px;
-}
-.drs-emp-header {
-  display:flex; align-items:center; justify-content:space-between;
-  padding:14px 18px; background:var(--surface2);
-  border-bottom:1px solid var(--border); flex-wrap:wrap; gap:10px;
-}
-.drs-rows { display:flex; flex-direction:column; }
-
-.drs-row {
-  display:flex; align-items:center; justify-content:space-between;
-  padding:12px 18px; border-bottom:1px solid var(--border);
-  transition:background var(--transition); gap:10px;
-}
-.drs-row:last-child { border-bottom:none; }
-.drs-row:hover      { background:rgba(255,255,255,.02); }
-
-.drs-file-icon {
-  width:36px; height:36px; border-radius:8px; flex-shrink:0;
-  display:flex; align-items:center; justify-content:center; font-size:16px;
-}
-.drs-file-icon.pdf { background:var(--red-bg);  color:var(--red); }
-.drs-file-icon.img { background:var(--blue-bg); color:var(--blue-light); }
-
-/* ── Responsive tweaks for new sections ──────────────────────── */
-@media(max-width:600px) {
-  .emp-report-box   { max-height:96vh; }
-  .emp-report-body  { padding:16px; }
-  .drs-emp-header   { flex-direction:column; align-items:flex-start; }
-  .drs-row          { flex-direction:column; align-items:flex-start; gap:10px; }
-}
-
-/* ── Print: hide report modal chrome ─────────────────────────── */
-@media print {
-  #empReportModal .emp-report-header button,
-  #empReportModal .emp-report-footer { display:none !important; }
-  .emp-report-box {
-    max-height:none; box-shadow:none; border:none;
-  }
-}
+.drs-drop:hover { border-color: var(--red); background: var(--red-bg); }
