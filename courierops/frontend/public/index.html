@@ -2,9 +2,6 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
-  <meta http-equiv="Pragma" content="no-cache"/>
-  <meta http-equiv="Expires" content="0"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <meta name="theme-color" content="#e63946"/>
   <meta name="description" content="KingPloyee — Employee Attendance & Salary Management"/>
@@ -534,34 +531,34 @@
         </div>
       </div>
 
-      <!-- ── DRS (Delivery Run Sheets) ─────────────── -->
-      <div class="tab-panel" id="tab-drs">
 
+      <!-- ── DRS Tab ──────────────────────────────────── -->
+      <div class="tab-panel" id="tab-drs">
         <div class="section-card">
           <div class="section-header">
-            <div class="section-title"><i class="fas fa-file-arrow-up"></i> Upload Delivery Run Sheet</div>
+            <div class="section-title"><i class="fas fa-file-arrow-up"></i> Upload Run Sheet</div>
           </div>
           <div class="form-grid">
             <div class="form-group">
-              <label for="drsEmp">Employee</label>
+              <label>Employee</label>
               <select id="drsEmp"><option value="">— Select Employee —</option></select>
             </div>
             <div class="form-group">
-              <label for="drsDate">Date of Run Sheet</label>
+              <label>Date of Run Sheet</label>
               <input type="date" id="drsDate"/>
             </div>
             <div class="form-group" style="grid-column:1/-1">
-              <label>Upload PDF / Image</label>
-              <div class="drs-upload-area" id="drsDropZone" onclick="document.getElementById('drsFile').click()">
-                <i class="fas fa-cloud-arrow-up"></i>
-                <span id="drsFileName">Click to choose files or drag &amp; drop here</span>
-                <span style="font-size:11px;color:var(--text-muted)">PDF, JPG, PNG supported · Multiple files allowed</span>
+              <label>Upload Files (PDF / Image) — Multiple allowed</label>
+              <div class="drs-drop" id="drsDropZone" onclick="document.getElementById('drsFile').click()">
+                <i class="fas fa-cloud-arrow-up" style="font-size:26px;color:#9ca3af"></i>
+                <span id="drsFileName" style="font-size:13px;color:#6b7280">Tap to choose · multiple files allowed</span>
+                <span style="font-size:11px;color:#9ca3af">PDF, JPG, PNG · max 10MB each</span>
               </div>
-              <input type="file" id="drsFile" accept=".pdf,.jpg,.jpeg,.png" style="display:none" multiple onchange="drsFileSelected(this)"/>
+              <input type="file" id="drsFile" accept=".pdf,.jpg,.jpeg,.png" multiple style="display:none" onchange="drsFileChosen(this)"/>
             </div>
             <div class="form-group" style="grid-column:1/-1">
-              <label for="drsNote">Note (optional)</label>
-              <input type="text" id="drsNote" placeholder="e.g. Zone A delivery, 45 parcels"/>
+              <label>Note (optional)</label>
+              <input type="text" id="drsNote" placeholder="e.g. Zone A, 42 parcels"/>
             </div>
           </div>
           <div class="divider"></div>
@@ -572,62 +569,47 @@
 
         <div class="section-card">
           <div class="section-header">
-            <div class="section-title"><i class="fas fa-truck-fast"></i> Delivery Run Sheets</div>
-            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-              <select id="drsFilterEmp" onchange="renderDRSList()" style="font-size:13px;padding:7px 10px;width:auto">
-                <option value="">All Employees</option>
-              </select>
-              <input type="month" id="drsFilterMo" onchange="renderDRSList()" style="font-size:13px;padding:7px 10px;width:auto"/>
-              <input type="date" id="drsFilterDate" onchange="renderDRSList()" style="font-size:13px;padding:7px 10px;width:auto"/>
+            <div class="section-title"><i class="fas fa-truck-fast"></i> Run Sheet Records</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <select id="drsFilterEmp" onchange="loadDRS()" style="font-size:12px;padding:6px 8px;width:auto"></select>
+              <input type="month" id="drsFilterMo" onchange="loadDRS()" style="font-size:12px;padding:6px 8px;width:auto"/>
+              <input type="date"  id="drsFilterDate" onchange="loadDRS()" style="font-size:12px;padding:6px 8px;width:auto"/>
             </div>
           </div>
           <div id="drsListWrap">
-            <div class="empty-state">
-              <i class="fas fa-truck-fast"></i>
-              <h3>No run sheets yet</h3>
-              <p>Upload a delivery run sheet using the form above.</p>
-            </div>
+            <div class="empty-state"><i class="fas fa-truck-fast"></i><h3>No run sheets yet</h3><p>Upload one above.</p></div>
           </div>
         </div>
-
       </div>
-
 
     </div><!-- /content -->
   </main>
 </div><!-- /appShell -->
 
-<!-- ═══════════════════════════════════════════════
-     EMPLOYEE ATTENDANCE REPORT MODAL
-═══════════════════════════════════════════════ -->
-<div id="empReportModal">
-  <div class="emp-report-box">
-    <div class="emp-report-header">
-      <div style="display:flex;align-items:center;gap:14px">
-        <div class="emp-avatar" id="erAvatar" style="width:46px;height:46px;font-size:17px;margin-right:0"></div>
+<!-- Employee Report Modal -->
+<div id="erModal" style="display:none;position:fixed;inset:0;z-index:6000;background:rgba(0,0,0,.7);align-items:center;justify-content:center;padding:16px">
+  <div style="background:#1a1a2e;border:1px solid #2d2d44;border-radius:16px;width:100%;max-width:740px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.8)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid #2d2d44;flex-shrink:0">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div class="emp-avatar" id="erAvatar" style="width:44px;height:44px;font-size:16px;flex-shrink:0"></div>
         <div>
-          <div style="font-size:18px;font-weight:700" id="erName">—</div>
-          <div style="font-size:12px;color:var(--text-muted)" id="erMeta">—</div>
+          <div style="font-size:17px;font-weight:700;color:#f1f5f9" id="erName">—</div>
+          <div style="font-size:12px;color:#94a3b8" id="erMeta">—</div>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:10px">
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-          <label style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Filter by Month</label>
-          <input type="month" id="erMonthFilter" onchange="erMonthChanged()"
-            style="font-size:12px;padding:5px 8px;width:auto;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text)"/>
+        <div>
+          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Month</div>
+          <input type="month" id="erMonth" onchange="erMonthChange()"
+            style="font-size:12px;padding:5px 8px;border-radius:6px;border:1px solid #3d3d5c;background:#12122a;color:#f1f5f9"/>
         </div>
-        <button class="modal-close" onclick="closeEmpReport()"><i class="fas fa-xmark"></i></button>
+        <button onclick="closeER()" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:18px;padding:4px 8px">✕</button>
       </div>
     </div>
-    <div class="emp-report-body" id="erBody">
-      <div style="text-align:center;padding:40px">
-        <div style="margin:0 auto 16px;width:36px;height:36px;border:3px solid #e5e7eb;border-top-color:#e63946;border-radius:50%;animation:spin .8s linear infinite"></div>
-        <div style="color:#6b7280;font-size:13px">Loading report…</div>
-      </div>
-    </div>
-    <div class="emp-report-footer no-print">
-      <button class="btn btn-secondary" onclick="closeEmpReport()"><i class="fas fa-xmark"></i> Close</button>
-      <button class="btn btn-primary" onclick="printEmpReport()"><i class="fas fa-print"></i> Print / Save PDF</button>
+    <div id="erBody" style="padding:20px;overflow-y:auto;flex:1"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 22px;border-top:1px solid #2d2d44;flex-shrink:0">
+      <button class="btn btn-secondary" onclick="closeER()">Close</button>
+      <button class="btn btn-primary" onclick="downloadER()"><i class="fas fa-download"></i> Download PDF</button>
     </div>
   </div>
 </div>
